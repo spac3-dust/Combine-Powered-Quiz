@@ -11,7 +11,7 @@ import SwiftUI
 struct QuizTestApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            QuizView(quizPrompts: QuizPrompt.samplePrompts)
         }
     }
 }
