@@ -1,144 +1,152 @@
-//
-//  QuizView.swift
-//  QuizTest
-//
-//  Created by Abe on 4/7/23.
-//
-
 import SwiftUI
 import Combine
 
-struct QuizPrompt: Hashable {
-    
-    let prompt: String
-    
-    let options: [QuizAnswer]
-    
-}
-
-struct QuizAnswer: Hashable {
-    
-    let answer: String
-    
-    var value: Int
-    
-}
-
-extension QuizPrompt {
-    
-    static let samplePrompts: [QuizPrompt] = [
-        
-        QuizPrompt(prompt: "Did you shut the lights off when not using it?",
-                   options: [
-                    QuizAnswer(answer: "Didn't consider it", value: 0),
-                    
-                    QuizAnswer(answer: "I did", value: 5),
-                   ]),
-        
-        QuizPrompt(prompt: "Did you reduce water",
-                   options: [
-                    QuizAnswer(answer: "Didn't consider it", value: 0),
-                    
-                    QuizAnswer(answer: "I did today!", value: 5),
-                   ])
-
-    ]
-}
-
-class QuizService {
-    
-    var answers = PassthroughSubject<QuizAnswer, Never>()
-    
-    //@Published var answers: [QuizAnswer] = []
-    @State var cancellables = Set<AnyCancellable>()
-    
-    var totalPoints: Int = 0
-    
-    init() {
-        calculatePoints()
-        
-    }
-
-    func calculatePoints() {
-        answers
-            .sink(receiveValue: { bob in
-                self.totalPoints += bob.value
-                
-            })
-            .store(in: &cancellables)
-        
-        print(totalPoints)
-    }
-
+enum stages {
+    case start, during, end
 }
 
 struct QuizView: View {
     
-    let quizPrompts: [QuizPrompt]
-    let quizService = QuizService()
+    @StateObject var quizService = QuizService()
     
-    @State var cancellables = Set<AnyCancellable>()
+    @State var stage: stages = .start
     
-    @State var index: Int = 0
+    var quizPrompts: [Prompts] = Prompts.samplePrompts
     
-    @State private var showEndView = false
+    init() {
+        quizPrompts.shuffle()
+    }
+
+    var body: some View {
+        
+        VStack {
+            
+            ProgressView("", value: quizService.progress, total: Double(quizPrompts.count))
+                .tint(.green)
+                .background(.thinMaterial)
+                .animation(.easeIn, value: quizService.progress)
+                .frame(maxWidth: .infinity)
+                
+            
+            VStack {
+                switch stage {
+                case .start:
+                    StartCard(stage: $stage)
+                        .padding()
+                    
+                case .during:
+                    PromptCards(prompts: quizPrompts, quizService: quizService, stage: $stage)
+                        .padding()
+                case .end:
+                    EndCard(quizService: quizService)
+                        .padding()
+                }
+            }
+            .padding()
+            .animation(.easeInOut(duration: 0.5), value: stage)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct StartCard: View {
+    
+    @Binding var stage: stages
     
     var body: some View {
         
         VStack {
-            if showEndView {
-                VStack {
-                    Text("Thank you.")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .fontDesign(.rounded)
-                    
-                    //Text("\(quizService.getPoints())")
-                    
-                    Text("Get Score")
-                        .font(.largeTitle)
-                        .onTapGesture {
-                            quizService.calculatePoints()
-                        }
-                }
+            Text("Are you ready?")
+                .font(.system(.title, design: .rounded))
+                .fontWeight(.heavy)
                 .padding()
-            }
-            else {
-                VStack {
-                    Text(quizPrompts[index].prompt)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .fontDesign(.rounded)
-                    
-                    ForEach(quizPrompts[index].options, id: \.self) { quizAnswer in
-                        
-                        Button {
-                            quizService.answers.send(quizAnswer)
-                
-                            if quizPrompts.count == index + 1  {
-                                showEndView.toggle()
-                            } else {
-                                index += 1
-                            }
-                            
-                        } label: {
-                            Text(quizAnswer.answer)
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(.green)
-                                .cornerRadius(15)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding()
+            
+            Button {
+                stage = .during
+            } label: {
+                Text("Begin")
+                    .font(.system(.title2, design: .rounded))
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(.green)
+                    .cornerRadius(15)
+                    .padding()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct PromptCards: View {
+    
+    let prompts: [Prompts]
+    
+    let quizService: QuizService
+    
+    @State var index = 0
+    
+    @Binding var stage: stages
+    
+    var body: some View {
+        VStack {
+            Text(prompts[index].prompt)
+                .font(.title2)
+                .fontWeight(.bold)
+                .fontDesign(.rounded)
+                .padding(.vertical)
+            
+            ForEach(prompts[index].options, id: \.self) { quizAnswer in
+                
+                Button {
+                    quizService.answers.send(quizAnswer)
+                    
+                    if prompts.count == index + 1  {
+                        stage = .end
+                        
+                        // Send completion to save totalPoints
+                        quizService.answers.send(completion: .finished)
+                        quizService.saver.send(completion: .finished)
+                        
+                    } else {
+                        index += 1
+                    }
+                    
+                } label: {
+                    Text(quizAnswer.answer)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(.green)
+                        .cornerRadius(15)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .animation(.default, value: index)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct EndCard: View {
+    
+    let quizService: QuizService
+    
+    var body: some View {
+        VStack {
+            Text("Your Points: \(quizService.totalPoints)/20")
+                .padding()
+            Text("Thank you!")
+                .font(.title)
+                .fontWeight(.bold)
+                .fontDesign(.rounded)
+            
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        QuizView(quizPrompts: QuizPrompt.samplePrompts)
+        QuizView()
     }
 }
