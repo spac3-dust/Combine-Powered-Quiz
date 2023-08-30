@@ -1,3 +1,3 @@
 # CombineQuizTest
 
-Quick playground for powering a Quiz App with Apple's Combine Framework. 
+Quick playground for using Apple's Combine Framework for processing input from Quiz Taker.
